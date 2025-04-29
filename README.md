@@ -7,7 +7,7 @@ Here are the instructions to set-up and run the basic [MoveIt Quickstart in Rviz
 Installation:
 
 ```sh
-sudo apt install ros-humble-moveit ros-humble-moveit-visual-tools # ros-noetic-panda-moveit-config 
+sudo apt install ros-humble-moveit ros-humble-moveit-visual-tools # ros-noetic-panda-moveit-config
 ```
 
 Currently there is a bug in the tutorials: the `franka_ros` model changed but this is not (yet) reflected in ros noetic moveit packages.
@@ -21,7 +21,7 @@ To fix the issue, edit `/opt/ros/noetic/share/panda_moveit_config/launch/plannin
 <!-- Load universal robot description format (URDF) -->
 <param if="$(eval arg('load_robot_description') and arg('load_gripper'))" name="$(arg robot_description)" command="$(find xacro)/xacro '$(find franka_description)/robots/panda_arm.urdf.xacro' hand:=true"/>
 <param if="$(eval arg('load_robot_description') and not arg('load_gripper'))" name="$(arg robot_description)" command="$(find xacro)/xacro '$(find franka_description)/robots/panda_arm.urdf.xacro'"/>
-``` 
+```
 
 by
 
@@ -33,4 +33,3 @@ by
 Alternatively you can [install MoveIt from source](https://ros-planning.github.io/moveit_tutorials/doc/getting_started/getting_started.html) and ignore the fix above.
 
 Then follow the [MoveIt Quickstart in Rviz tutorial](https://ros-planning.github.io/moveit_tutorials/doc/quickstart_in_rviz/quickstart_in_rviz_tutorial.html#).
-

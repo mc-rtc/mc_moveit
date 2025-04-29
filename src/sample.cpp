@@ -1,6 +1,6 @@
-#include <SpaceVecAlg/PTransform.h>
 #include <mc_control/mc_global_controller.h>
 #include <mc_rbdyn/RobotLoader.h>
+#include <SpaceVecAlg/PTransform.h>
 
 #include <mc_moveit/Planner.h>
 
@@ -36,7 +36,8 @@ int main(int argc, char * argv[])
   // Start a dummy controller to get a published state
   mc_control::MCGlobalController controller(config);
   auto & robot = controller.robot();
-  auto & frame = [&robot, &EndEffector]() -> mc_rbdyn::RobotFrame & {
+  auto & frame = [&robot, &EndEffector]() -> mc_rbdyn::RobotFrame &
+  {
     const std::string efFrameName = EndEffector.empty() ? "EndEffector" : EndEffector;
     if(!robot.hasFrame(efFrameName))
     {
@@ -54,10 +55,7 @@ int main(int argc, char * argv[])
     {
       if(controller.robot().hasJoint(jn))
       {
-        for(auto & qj : mbc.q[controller.robot().jointIndexByName(jn)])
-        {
-          q.push_back(qj);
-        }
+        for(auto & qj : mbc.q[controller.robot().jointIndexByName(jn)]) { q.push_back(qj); }
       }
       else
       {
@@ -82,7 +80,8 @@ int main(int argc, char * argv[])
   bool trajectory_executing = false;
   std::string str_state = "Waiting for plan request";
 
-  auto clear_ef_task = [&]() {
+  auto clear_ef_task = [&]()
+  {
     if(ef_task)
     {
       solver.removeTask(ef_task);
@@ -99,35 +98,34 @@ int main(int argc, char * argv[])
 
   bool do_quick_reset = false;
 
-  std::thread run_th([&]() {
-    while(controller.running && controller.run())
-    {
-      if(ef_task && ef_task->timeElapsed())
+  std::thread run_th(
+      [&]()
       {
-        posture_task->reset();
-        trajectory_executing = false;
-      }
-      if(posture_trajectory_task && posture_trajectory_task->timeElapsed())
-      {
-        posture_task->reset();
-        trajectory_executing = false;
-      }
-      if(do_quick_reset)
-      {
-        do_quick_reset = false;
-        clear_ef_task();
-        posture_task->target(robot.module().stance());
-        auto & mbc = controller.controller().robot().mbc();
-        mbc.zero(robot.mb());
-        for(const auto & [name, config] : robot.module().stance())
+        while(controller.running && controller.run())
         {
-          mbc.q[robot.jointIndexByName(name)] = config;
+          if(ef_task && ef_task->timeElapsed())
+          {
+            posture_task->reset();
+            trajectory_executing = false;
+          }
+          if(posture_trajectory_task && posture_trajectory_task->timeElapsed())
+          {
+            posture_task->reset();
+            trajectory_executing = false;
+          }
+          if(do_quick_reset)
+          {
+            do_quick_reset = false;
+            clear_ef_task();
+            posture_task->target(robot.module().stance());
+            auto & mbc = controller.controller().robot().mbc();
+            mbc.zero(robot.mb());
+            for(const auto & [name, config] : robot.module().stance()) { mbc.q[robot.jointIndexByName(name)] = config; }
+          }
+          std::this_thread::sleep_until(now + dt);
+          now = std::chrono::steady_clock::now();
         }
-      }
-      std::this_thread::sleep_until(now + dt);
-      now = std::chrono::steady_clock::now();
-    }
-  });
+      });
 
   mc_moveit::Planner planner(controller.robot(), frame.body());
 
@@ -135,7 +133,8 @@ int main(int argc, char * argv[])
   sva::PTransformd target = frame.position();
   std::map<std::string, std::vector<double>> posture_target = robot.module().stance();
   mc_moveit::Planner::Trajectory trajectory;
-  auto make_plan = [&]() {
+  auto make_plan = [&]()
+  {
     if(trajectory_executing)
     {
       mc_rtc::log::error("Plan execution in progress");
@@ -147,12 +146,10 @@ int main(int argc, char * argv[])
       str_state = "Execution ready";
       mc_rtc::log::success("Execution ready");
     }
-    else
-    {
-      str_state = "Planning failed";
-    }
+    else { str_state = "Planning failed"; }
   };
-  auto make_posture_plan = [&]() {
+  auto make_posture_plan = [&]()
+  {
     if(trajectory_executing)
     {
       mc_rtc::log::error("Plan execution in progress");
@@ -164,12 +161,10 @@ int main(int argc, char * argv[])
       str_state = "Execution ready";
       mc_rtc::log::success("Execution ready");
     }
-    else
-    {
-      str_state = "Planning failed";
-    }
+    else { str_state = "Planning failed"; }
   };
-  auto execute_plan = [&]() {
+  auto execute_plan = [&]()
+  {
     if(trajectory_executing)
     {
       mc_rtc::log::error("Plan is already executing");
@@ -185,10 +180,7 @@ int main(int argc, char * argv[])
       mc_rtc::log::error("One point or less to play in the trajectory");
       return;
     }
-    if(ef_task || posture_trajectory_task)
-    {
-      clear_ef_task();
-    }
+    if(ef_task || posture_trajectory_task) { clear_ef_task(); }
     trajectory_executing = true;
     solver.removeTask(posture_task);
     if(trajectory_posture_execution)
@@ -203,14 +195,15 @@ int main(int argc, char * argv[])
     }
   };
 
-  auto update_obstacle_position = [&](const std::string & name, const sva::PTransformd & pos) {
-    planner.update_obstacle(name, pos);
-  };
-  auto remove_obstacle = [&](const std::string & name) {
+  auto update_obstacle_position = [&](const std::string & name, const sva::PTransformd & pos)
+  { planner.update_obstacle(name, pos); };
+  auto remove_obstacle = [&](const std::string & name)
+  {
     planner.remove_obstacle(name);
     gui.removeCategory({"MoveIt", "Collisions", name});
   };
-  auto add_obstacle = [&](const std::string & name, const Eigen::Vector3d & size) {
+  auto add_obstacle = [&](const std::string & name, const Eigen::Vector3d & size)
+  {
     rbd::parsers::Visual visual;
     visual.name = name;
     visual.origin = sva::PTransformd::Identity();
@@ -239,7 +232,8 @@ int main(int argc, char * argv[])
 
   int fake_source = 0;
   std::function<void(const std::string &)> setup_interface;
-  setup_interface = [&](const std::string & mode) {
+  setup_interface = [&](const std::string & mode)
+  {
     gui.removeElements(&fake_source);
     gui.addElement(&fake_source, {},
                    mc_rtc::gui::ComboInput(
@@ -258,14 +252,12 @@ int main(int argc, char * argv[])
     {
       gui.addElement(&fake_source, {},
                      mc_rtc::gui::Button("Set posture target",
-                                         [&]() {
+                                         [&]()
+                                         {
                                            for(size_t i = 0; i < robot.mb().joints().size(); ++i)
                                            {
                                              const auto & j = robot.mb().joint(i);
-                                             if(j.dof() == 1)
-                                             {
-                                               posture_target[j.name()] = robot.mbc().q[i];
-                                             }
+                                             if(j.dof() == 1) { posture_target[j.name()] = robot.mbc().q[i]; }
                                            }
                                          }),
                      mc_rtc::gui::Button("Plan", [&]() { make_posture_plan(); }));
@@ -273,7 +265,8 @@ int main(int argc, char * argv[])
     gui.addElement(&fake_source, {}, mc_rtc::gui::Button("Execute", [&]() { execute_plan(); }),
                    mc_rtc::gui::Button("Clear executing task", [&]() { clear_ef_task(); }),
                    mc_rtc::gui::Button("Clear executing task & reset robot",
-                                       [&]() {
+                                       [&]()
+                                       {
                                          clear_ef_task();
                                          posture_task->target(robot.module().stance());
                                        }),
@@ -287,9 +280,6 @@ int main(int argc, char * argv[])
   };
   setup_interface("Target posture");
 
-  if(run_th.joinable())
-  {
-    run_th.join();
-  }
+  if(run_th.joinable()) { run_th.join(); }
   return 0;
 }

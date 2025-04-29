@@ -18,20 +18,14 @@ void PostureTrajectoryTask::addToSolver(mc_solver::QPSolver & solver)
   t_ = 0.0;
   postures_idx_ = 0;
   target_ = postures_[0].posture;
-  for(const auto & [name, target] : postures_[0].posture)
-  {
-    posture_increment_[name] = 0.0;
-  }
+  for(const auto & [name, target] : postures_[0].posture) { posture_increment_[name] = 0.0; }
   target(target_);
 }
 
 void PostureTrajectoryTask::update(mc_solver::QPSolver & solver)
 {
   mc_tasks::PostureTask::update(solver);
-  if(time_elapsed_)
-  {
-    return;
-  }
+  if(time_elapsed_) { return; }
   if(t_ >= postures_[postures_idx_].time)
   {
     // Number of control steps until the next posture
@@ -56,10 +50,7 @@ void PostureTrajectoryTask::update(mc_solver::QPSolver & solver)
       return;
     }
   }
-  for(const auto & [name, increment] : posture_increment_)
-  {
-    target_[name][0] += increment;
-  }
+  for(const auto & [name, increment] : posture_increment_) { target_[name][0] += increment; }
   target(target_);
   t_ += solver.dt();
 }

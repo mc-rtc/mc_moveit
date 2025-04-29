@@ -6,11 +6,11 @@
 #include <geometric_shapes/shape_operations.h>
 #include <geometric_shapes/shapes.h>
 
-#include <mc_rtc_ros/ros.h>
-#include <octomap_msgs/msg/octomap_with_pose.h>
-#include <octomap_msgs/conversions.h>
-#include <octomap/OcTree.h>
 #include <moveit_msgs/msg/detail/planning_scene__struct.hpp>
+#include <octomap_msgs/conversions.h>
+#include <octomap_msgs/msg/octomap_with_pose.h>
+#include <mc_rtc_ros/ros.h>
+#include <octomap/OcTree.h>
 
 namespace mc_moveit
 {
@@ -41,18 +41,9 @@ static void configToParam(rclcpp::Node & nh,
                           const std::string & k,
                           const mc_rtc::Configuration & value)
 {
-  if(value.isString())
-  {
-    nh.set_parameter({ns + k, value.operator std::string()});
-  }
-  else if(value.isNumeric())
-  {
-    nh.set_parameter({ns + k, value.operator double()});
-  }
-  else
-  {
-    nh.set_parameter({ns + k, value.operator bool()});
-  }
+  if(value.isString()) { nh.set_parameter({ns + k, value.operator std::string()}); }
+  else if(value.isNumeric()) { nh.set_parameter({ns + k, value.operator double()}); }
+  else { nh.set_parameter({ns + k, value.operator bool()}); }
 }
 
 static constexpr auto DEFAULT_GROUP = "default_group";
@@ -71,10 +62,10 @@ static std::string make_simple_srdf(const mc_rbdyn::Robot & robot, const std::st
 )",
                       DEFAULT_GROUP, bodies[0].name(), ef_body, bodies[0].name());
   const auto & collisions = robot.module().commonSelfCollisions();
-  auto has_collision = [&](const std::string & b1, const std::string & b2) {
-    auto it = std::find_if(collisions.begin(), collisions.end(), [&b1, &b2](const mc_rbdyn::Collision & c) {
-      return (c.body1 == b1 && c.body2 == b2) || (c.body1 == b2 && c.body2 == b1);
-    });
+  auto has_collision = [&](const std::string & b1, const std::string & b2)
+  {
+    auto it = std::find_if(collisions.begin(), collisions.end(), [&b1, &b2](const mc_rbdyn::Collision & c)
+                           { return (c.body1 == b1 && c.body2 == b2) || (c.body1 == b2 && c.body2 == b1); });
     return it != collisions.end();
   };
   for(size_t i = 0; i < bodies.size(); ++i)
@@ -96,7 +87,8 @@ static std::string make_simple_srdf(const mc_rbdyn::Robot & robot, const std::st
 
 static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::msg::CollisionObject & object)
 {
-  auto box_to_msg = [&]() {
+  auto box_to_msg = [&]()
+  {
     const auto & box = boost::get<rbd::parsers::Geometry::Box>(visual.geometry.data);
     shape_msgs::msg::SolidPrimitive shape;
     shape.type = shape.BOX;
@@ -106,7 +98,8 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::msg:
     shape.dimensions[2] = box.size.z();
     object.primitives.push_back(shape);
   };
-  auto cylinder_to_msg = [&]() {
+  auto cylinder_to_msg = [&]()
+  {
     const auto & cyl = boost::get<rbd::parsers::Geometry::Cylinder>(visual.geometry.data);
     shape_msgs::msg::SolidPrimitive shape;
     shape.type = shape.CYLINDER;
@@ -115,7 +108,8 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::msg:
     shape.dimensions[shape.CYLINDER_RADIUS] = cyl.radius;
     object.primitives.push_back(shape);
   };
-  auto sphere_to_msg = [&]() {
+  auto sphere_to_msg = [&]()
+  {
     const auto & sph = boost::get<rbd::parsers::Geometry::Sphere>(visual.geometry.data);
     shape_msgs::msg::SolidPrimitive shape;
     shape.type = shape.SPHERE;
@@ -123,7 +117,8 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::msg:
     shape.dimensions[0] = sph.radius;
     object.primitives.push_back(shape);
   };
-  auto mesh_to_msg = [&]() {
+  auto mesh_to_msg = [&]()
+  {
     const auto & mesh = boost::get<rbd::parsers::Geometry::Mesh>(visual.geometry.data);
     auto mesh_data = shapes::createMeshFromResource(mesh.filename, mesh.scaleV);
     object.meshes.emplace({});
@@ -131,10 +126,7 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::msg:
     shape.triangles.resize(mesh_data->triangle_count);
     for(size_t i = 0; i < mesh_data->triangle_count; ++i)
     {
-      for(size_t j = 0; j < 3; ++j)
-      {
-        shape.triangles[i].vertex_indices[j] = mesh_data->triangles[3 * i + j];
-      }
+      for(size_t j = 0; j < 3; ++j) { shape.triangles[i].vertex_indices[j] = mesh_data->triangles[3 * i + j]; }
     }
     shape.vertices.resize(mesh_data->vertex_count);
     for(size_t i = 0; i < mesh_data->vertex_count; ++i)
@@ -165,7 +157,8 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::msg:
 }
 
 Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, const PlannerConfig & config)
-: nh_(std::make_shared<rclcpp::Node>(config.ns, rclcpp::NodeOptions{}.allow_undeclared_parameters(true))), body_(ef_body), tf_static_caster_(*nh_)
+: nh_(std::make_shared<rclcpp::Node>(config.ns, rclcpp::NodeOptions{}.allow_undeclared_parameters(true))),
+  body_(ef_body), tf_static_caster_(*nh_)
 {
   auto & nh = *nh_;
 
@@ -181,10 +174,7 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
   }
 
   std::string robot_tf_prefix = "/control";
-  if(robot.robotIndex() != 0)
-  {
-    robot_tf_prefix = fmt::format("/control/env_{}", robot.robotIndex());
-  }
+  if(robot.robotIndex() != 0) { robot_tf_prefix = fmt::format("/control/env_{}", robot.robotIndex()); }
 
   // FIXME This should not be needed but it fixes many TF warnings from MoveIt as it is not looking into the prefixed TF
   // for transformation involving the robot's base
@@ -201,36 +191,29 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
   nh.set_parameter({fmt::format("{}/robot_description_semantic", robot_tf_prefix), make_simple_srdf(robot, ef_body)});
   {
     std::string ns = fmt::format("{}/robot_description_kinematics/{}/", robot_tf_prefix, DEFAULT_GROUP);
-    nh.set_parameters(
-        {
-          {ns + "kinematics_solver", "kdl_kinematics_plugin/KDLKinematicsPlugin"},
-          {ns + "kinematics_solver_search_resolution", 0.005},
-          {ns + "kinematics_solver_timeout", 500 * 0.005}
-        });
+    nh.set_parameters({{ns + "kinematics_solver", "kdl_kinematics_plugin/KDLKinematicsPlugin"},
+                       {ns + "kinematics_solver_search_resolution", 0.005},
+                       {ns + "kinematics_solver_timeout", 500 * 0.005}});
   }
   {
     std::string ns = "planning_scene_monitor_options/";
     nh.set_parameters(
-        {
-        {ns + "name", config.ns},
-        {ns + "robot_description", fmt::format("{}/robot_description", robot_tf_prefix)},
-        {ns + "joint_state_topic", fmt::format("{}/joint_states", robot_tf_prefix)},
-        {ns + "attached_collision_object_topic",
-                 fmt::format("{}/{}", config.ns,
-                             planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC)},
-                 {ns + "monitored_planning_scene_topic",
-        fmt::format("{}/{}", config.ns, planning_scene_monitor::PlanningSceneMonitor::MONITORED_PLANNING_SCENE_TOPIC)},
-        {ns + "publish_planning_scene_topic",
-        fmt::format("{}/{}", config.ns, planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC)}
-        });
+        {{ns + "name", config.ns},
+         {ns + "robot_description", fmt::format("{}/robot_description", robot_tf_prefix)},
+         {ns + "joint_state_topic", fmt::format("{}/joint_states", robot_tf_prefix)},
+         {ns + "attached_collision_object_topic",
+          fmt::format("{}/{}", config.ns,
+                      planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC)},
+         {ns + "monitored_planning_scene_topic",
+          fmt::format("{}/{}", config.ns,
+                      planning_scene_monitor::PlanningSceneMonitor::MONITORED_PLANNING_SCENE_TOPIC)},
+         {ns + "publish_planning_scene_topic",
+          fmt::format("{}/{}", config.ns,
+                      planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC)}});
 
     ns = "planning_pipelines/";
     std::vector<std::string> pipeline_names = config.config("pipeline_names");
-    nh.set_parameters(
-        {
-        {ns + "pipeline_names", pipeline_names},
-        {ns + "namespace", config.ns}
-        });
+    nh.set_parameters({{ns + "pipeline_names", pipeline_names}, {ns + "namespace", config.ns}});
 
     for(const auto & pipeline : pipeline_names)
     {
@@ -252,10 +235,7 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
       std::vector<std::string> keys = pipec.keys();
       for(const auto & k : keys)
       {
-        if(k == "request_adapters" || k == "planning_plugin")
-        {
-          continue;
-        }
+        if(k == "request_adapters" || k == "planning_plugin") { continue; }
         auto value = pipec(k);
         configToParam(nh, ns, k, value);
       }
@@ -331,10 +311,7 @@ void Planner::attach_object(const std::string & object_name,
 void Planner::detach_object(const std::string & object_name)
 {
   auto it = attached_objects_.find(object_name);
-  if(it == attached_objects_.end())
-  {
-    return;
-  }
+  if(it == attached_objects_.end()) { return; }
   detach_object(it);
 }
 
@@ -395,10 +372,7 @@ void Planner::update_obstacle(const std::string & object, const sva::PTransformd
 void Planner::remove_obstacle(const std::string & object)
 {
   auto it = obstacles_.find(object);
-  if(it == obstacles_.end())
-  {
-    return;
-  }
+  if(it == obstacles_.end()) { return; }
 
   remove_obstacle(it);
 }
@@ -418,10 +392,7 @@ void Planner::remove_obstacle(const std::map<std::string, Obstacle>::iterator & 
 
 void Planner::clear_obstacles()
 {
-  while(!obstacles_.empty())
-  {
-    remove_obstacle(obstacles_.begin());
-  }
+  while(!obstacles_.empty()) { remove_obstacle(obstacles_.begin()); }
 }
 
 auto Planner::get_obstacle(const std::string & name) -> const Obstacle &
@@ -502,10 +473,7 @@ auto Planner::plan(const mc_rbdyn::RobotFrame & frame, const std::map<std::strin
   auto goal_state = *(moveit_cpp_ptr_->getCurrentState());
   for(const auto & [name, config] : target)
   {
-    if(config.size() == 0)
-    {
-      continue;
-    }
+    if(config.size() == 0) { continue; }
     if(goal_state.getJointModel(name)->getVariableCount() != config.size())
     {
       mc_rtc::log::error("Invalid posture target for {}", name);
@@ -544,10 +512,7 @@ auto Planner::do_plan(const mc_rbdyn::RobotFrame & frame) -> Trajectory
     std::map<std::string, std::vector<double>> posture;
     for(const auto & j : group->getJointModelNames())
     {
-      if(group->getJointModel(j)->getStateSpaceDimension() == 1)
-      {
-        posture[j] = {*state->getJointPositions(j)};
-      }
+      if(group->getJointModel(j)->getStateSpaceDimension() == 1) { posture[j] = {*state->getJointPositions(j)}; }
     }
     out.postures.push_back({t, posture});
   }
@@ -570,9 +535,8 @@ std::future<PlannerPtr> make_planner(const mc_rbdyn::Robot & robot,
                                      const std::string & ef_body,
                                      const PlannerConfig & config)
 {
-  return std::async(std::launch::async, [&robot, ef_body, config]() {
-    return std::unique_ptr<Planner>(new Planner(robot, ef_body, config));
-  });
+  return std::async(std::launch::async, [&robot, ef_body, config]()
+                    { return std::unique_ptr<Planner>(new Planner(robot, ef_body, config)); });
 }
 
 std::shared_ptr<mc_moveit::BSplineTrajectoryTask> Planner::Trajectory::setup_bspline_task(

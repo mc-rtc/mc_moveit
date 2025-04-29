@@ -21,10 +21,7 @@ struct MC_MOVEIT_DLLAPI PostureTrajectoryTask : public mc_tasks::PostureTask
 
   void update(mc_solver::QPSolver &) override;
 
-  inline bool timeElapsed() const noexcept
-  {
-    return time_elapsed_;
-  }
+  inline bool timeElapsed() const noexcept { return time_elapsed_; }
 
 private:
   double t_ = 0.0;

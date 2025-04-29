@@ -7,9 +7,16 @@ write_basic_package_version_file(
   VERSION ${PROJECT_VERSION}
   COMPATIBILITY SameMajorVersion
 )
-configure_package_config_file("${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in" "${PROJECT_CONFIG}" INSTALL_DESTINATION "${CONFIG_INSTALL_DIR}")
-install(FILES "${PROJECT_CONFIG}" "${VERSION_CONFIG}" DESTINATION "${CONFIG_INSTALL_DIR}")
-install(EXPORT mc_moveitTargets
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/Config.cmake.in" "${PROJECT_CONFIG}"
+  INSTALL_DESTINATION "${CONFIG_INSTALL_DIR}"
+)
+install(FILES "${PROJECT_CONFIG}" "${VERSION_CONFIG}"
+        DESTINATION "${CONFIG_INSTALL_DIR}"
+)
+install(
+  EXPORT mc_moveitTargets
   FILE mc_moveitTargets.cmake
   NAMESPACE mc_moveit::
-  DESTINATION "${CONFIG_INSTALL_DIR}")
+  DESTINATION "${CONFIG_INSTALL_DIR}"
+)

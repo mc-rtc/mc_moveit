@@ -232,7 +232,6 @@ private:
   std::shared_ptr<PlanningComponent> planning_;
   moveit::core::RobotModelConstPtr robot_model_;
 
-
   rclcpp::Publisher<moveit_msgs::msg::CollisionObject>::SharedPtr obstacles_publisher_;
   rclcpp::Publisher<moveit_msgs::msg::AttachedCollisionObject>::SharedPtr attached_objects_publisher_;
   rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_publisher_;
