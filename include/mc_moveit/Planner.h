@@ -4,17 +4,22 @@
 #include <mc_moveit/PostureTrajectoryTask.h>
 #include <mc_moveit/config.h>
 
+#include <mc_rtc/logging.h>
 #include <mc_rtc/ros.h>
+#include <moveit_msgs/msg/detail/attached_collision_object__struct.hpp>
+#include <moveit_msgs/msg/detail/collision_object__struct.hpp>
+#include <rclcpp/publisher.hpp>
 
 #include <mc_rbdyn/RobotFrame.h>
 
 #include <RBDyn/parsers/common.h>
 
+#include <mc_rtc_ros/ros.h>
 #include <moveit/moveit_cpp/moveit_cpp.h>
 #include <moveit/moveit_cpp/planning_component.h>
-// FIXME For noetic use moveit::core namespace instead as moveit::planning_interface is deprecated
-using MoveItCpp = moveit::planning_interface::MoveItCpp;
-using PlanningComponent = moveit::planning_interface::PlanningComponent;
+
+using MoveItCpp = moveit_cpp::MoveItCpp;
+using PlanningComponent = moveit_cpp::PlanningComponent;
 
 #include <moveit/planning_scene_interface/planning_scene_interface.h>
 #include <moveit/robot_state/conversions.h>
@@ -157,7 +162,7 @@ struct MC_MOVEIT_DLLAPI Planner
      * - Other values indicate an error, see
      * http://docs.ros.org/en/noetic/api/moveit_msgs/html/msg/MoveItErrorCodes.html for a brief description
      */
-    decltype(moveit_msgs::MoveItErrorCodes::val) error;
+    decltype(moveit_msgs::msg::MoveItErrorCodes::val) error;
     /** List of waypoints in this trajectory including the first and final waypoints */
     std::vector<TimedPose> waypoints;
     /** List of posture waypoints configuration including the first and final waypoints */
@@ -218,17 +223,19 @@ struct MC_MOVEIT_DLLAPI Planner
                                      const std::map<std::string, std::vector<double>> & target);
 
 private:
-  ros::NodeHandle nh_;
+  rclcpp::Node::SharedPtr nh_;
   std::string body_;
   tf2_ros::StaticTransformBroadcaster tf_static_caster_;
   std::atomic<bool> busy_{false};
   std::shared_ptr<MoveItCpp> moveit_cpp_ptr_;
   planning_scene_monitor::PlanningSceneMonitorPtr monitor_;
   std::shared_ptr<PlanningComponent> planning_;
-  robot_model::RobotModelConstPtr robot_model_;
-  ros::Publisher obstacles_publisher_;
-  ros::Publisher attached_objects_publisher_;
-  ros::Publisher planning_scene_publisher_;
+  moveit::core::RobotModelConstPtr robot_model_;
+
+
+  rclcpp::Publisher<moveit_msgs::msg::CollisionObject>::SharedPtr obstacles_publisher_;
+  rclcpp::Publisher<moveit_msgs::msg::AttachedCollisionObject>::SharedPtr attached_objects_publisher_;
+  rclcpp::Publisher<moveit_msgs::msg::PlanningScene>::SharedPtr planning_scene_publisher_;
   std::map<std::string, Obstacle> obstacles_;
   std::map<std::string, AttachedObject> attached_objects_;
   bool plan_with_cartesian_goal_ = false;

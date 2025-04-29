@@ -6,14 +6,16 @@
 #include <geometric_shapes/shape_operations.h>
 #include <geometric_shapes/shapes.h>
 
-#include <octomap_msgs/OctomapWithPose.h>
+#include <mc_rtc_ros/ros.h>
+#include <octomap_msgs/msg/octomap_with_pose.h>
 #include <octomap_msgs/conversions.h>
 #include <octomap/OcTree.h>
+#include <moveit_msgs/msg/detail/planning_scene__struct.hpp>
 
 namespace mc_moveit
 {
 
-static void PtToMsg(const sva::PTransformd & pt, geometry_msgs::Pose & msg)
+static void PtToMsg(const sva::PTransformd & pt, geometry_msgs::msg::Pose & msg)
 {
   msg.position.x = pt.translation().x();
   msg.position.y = pt.translation().y();
@@ -26,30 +28,30 @@ static void PtToMsg(const sva::PTransformd & pt, geometry_msgs::Pose & msg)
   msg.orientation.z = q.z();
 }
 
-static geometry_msgs::Pose PtToMsg(const sva::PTransformd & pt)
+static geometry_msgs::msg::Pose PtToMsg(const sva::PTransformd & pt)
 {
-  geometry_msgs::Pose pose;
+  geometry_msgs::msg::Pose pose;
   PtToMsg(pt, pose);
   return pose;
 }
 
 // FIXME This is not complete enough for sure
-static void configToParam(ros::NodeHandle & nh,
+static void configToParam(rclcpp::Node & nh,
                           const std::string & ns,
                           const std::string & k,
                           const mc_rtc::Configuration & value)
 {
   if(value.isString())
   {
-    nh.setParam(ns + k, value.operator std::string());
+    nh.set_parameter({ns + k, value.operator std::string()});
   }
   else if(value.isNumeric())
   {
-    nh.setParam(ns + k, value.operator double());
+    nh.set_parameter({ns + k, value.operator double()});
   }
   else
   {
-    nh.setParam(ns + k, value.operator bool());
+    nh.set_parameter({ns + k, value.operator bool()});
   }
 }
 
@@ -92,11 +94,11 @@ static std::string make_simple_srdf(const mc_rbdyn::Robot & robot, const std::st
   return srdf;
 }
 
-static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::CollisionObject & object)
+static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::msg::CollisionObject & object)
 {
   auto box_to_msg = [&]() {
     const auto & box = boost::get<rbd::parsers::Geometry::Box>(visual.geometry.data);
-    shape_msgs::SolidPrimitive shape;
+    shape_msgs::msg::SolidPrimitive shape;
     shape.type = shape.BOX;
     shape.dimensions.resize(3);
     shape.dimensions[0] = box.size.x();
@@ -106,7 +108,7 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::Coll
   };
   auto cylinder_to_msg = [&]() {
     const auto & cyl = boost::get<rbd::parsers::Geometry::Cylinder>(visual.geometry.data);
-    shape_msgs::SolidPrimitive shape;
+    shape_msgs::msg::SolidPrimitive shape;
     shape.type = shape.CYLINDER;
     shape.dimensions.resize(2);
     shape.dimensions[shape.CYLINDER_HEIGHT] = cyl.length;
@@ -115,7 +117,7 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::Coll
   };
   auto sphere_to_msg = [&]() {
     const auto & sph = boost::get<rbd::parsers::Geometry::Sphere>(visual.geometry.data);
-    shape_msgs::SolidPrimitive shape;
+    shape_msgs::msg::SolidPrimitive shape;
     shape.type = shape.SPHERE;
     shape.dimensions.resize(1);
     shape.dimensions[0] = sph.radius;
@@ -123,9 +125,9 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::Coll
   };
   auto mesh_to_msg = [&]() {
     const auto & mesh = boost::get<rbd::parsers::Geometry::Mesh>(visual.geometry.data);
-    auto mesh_data = shapes::createMeshFromResource(mesh.filename, Eigen::Vector3d::Constant(mesh.scale));
-    object.meshes.push_back({});
-    shape_msgs::Mesh & shape = object.meshes.back();
+    auto mesh_data = shapes::createMeshFromResource(mesh.filename, mesh.scaleV);
+    object.meshes.emplace({});
+    shape_msgs::msg::Mesh & shape = object.meshes.back();
     shape.triangles.resize(mesh_data->triangle_count);
     for(size_t i = 0; i < mesh_data->triangle_count; ++i)
     {
@@ -163,8 +165,10 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::Coll
 }
 
 Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, const PlannerConfig & config)
-: nh_(config.ns), body_(ef_body)
+: nh_(std::make_shared<rclcpp::Node>(config.ns, rclcpp::NodeOptions{}.allow_undeclared_parameters(true))), body_(ef_body), tf_static_caster_(*nh_)
 {
+  auto & nh = *nh_;
+
   if(!robot.hasBody(ef_body))
   {
     mc_rtc::log::error_and_throw<std::runtime_error>("[mc_moveit] {} has no body named {}", robot.name(), ef_body);
@@ -184,7 +188,7 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
 
   // FIXME This should not be needed but it fixes many TF warnings from MoveIt as it is not looking into the prefixed TF
   // for transformation involving the robot's base
-  geometry_msgs::TransformStamped base_to_base;
+  geometry_msgs::msg::TransformStamped base_to_base;
   base_to_base.header.frame_id = fmt::format("{}/{}", robot_tf_prefix, robot.mb().body(0).name());
   base_to_base.child_frame_id = robot.mb().body(0).name();
   base_to_base.transform.rotation.w = 1.0;
@@ -194,38 +198,45 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
   // copy some settings over from the robot_tf_prefix
 
   // FIXME Mimic/Support loading a lot of these settings via roslaunch
-  nh_.setParam(fmt::format("{}/robot_description_semantic", robot_tf_prefix), make_simple_srdf(robot, ef_body));
+  nh.set_parameter({fmt::format("{}/robot_description_semantic", robot_tf_prefix), make_simple_srdf(robot, ef_body)});
   {
     std::string ns = fmt::format("{}/robot_description_kinematics/{}/", robot_tf_prefix, DEFAULT_GROUP);
-    nh_.setParam(ns + "kinematics_solver", "kdl_kinematics_plugin/KDLKinematicsPlugin");
-    nh_.setParam(ns + "kinematics_solver_search_resolution", 0.005);
-    nh_.setParam(ns + "kinematics_solver_timeout", 500 * 0.005);
+    nh.set_parameters(
+        {
+          {ns + "kinematics_solver", "kdl_kinematics_plugin/KDLKinematicsPlugin"},
+          {ns + "kinematics_solver_search_resolution", 0.005},
+          {ns + "kinematics_solver_timeout", 500 * 0.005}
+        });
   }
   {
     std::string ns = "planning_scene_monitor_options/";
-    nh_.setParam(ns + "name", config.ns);
-    nh_.setParam(ns + "robot_description", fmt::format("{}/robot_description", robot_tf_prefix));
-    nh_.setParam(ns + "joint_state_topic", fmt::format("{}/joint_states", robot_tf_prefix));
-    nh_.setParam(ns + "attached_collision_object_topic",
+    nh.set_parameters(
+        {
+        {ns + "name", config.ns},
+        {ns + "robot_description", fmt::format("{}/robot_description", robot_tf_prefix)},
+        {ns + "joint_state_topic", fmt::format("{}/joint_states", robot_tf_prefix)},
+        {ns + "attached_collision_object_topic",
                  fmt::format("{}/{}", config.ns,
-                             planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC));
-    nh_.setParam(
-        ns + "monitored_planning_scene_topic",
-        fmt::format("{}/{}", config.ns, planning_scene_monitor::PlanningSceneMonitor::MONITORED_PLANNING_SCENE_TOPIC));
-    nh_.setParam(
-        ns + "publish_planning_scene_topic",
-        fmt::format("{}/{}", config.ns, planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC));
+                             planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC)},
+                 {ns + "monitored_planning_scene_topic",
+        fmt::format("{}/{}", config.ns, planning_scene_monitor::PlanningSceneMonitor::MONITORED_PLANNING_SCENE_TOPIC)},
+        {ns + "publish_planning_scene_topic",
+        fmt::format("{}/{}", config.ns, planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC)}
+        });
 
     ns = "planning_pipelines/";
     std::vector<std::string> pipeline_names = config.config("pipeline_names");
-    nh_.setParam(ns + "pipeline_names", pipeline_names);
-    nh_.setParam(ns + "namespace", config.ns);
+    nh.set_parameters(
+        {
+        {ns + "pipeline_names", pipeline_names},
+        {ns + "namespace", config.ns}
+        });
 
     for(const auto & pipeline : pipeline_names)
     {
       ns = fmt::format("{}/", pipeline);
       auto pipec = config.config(pipeline);
-      nh_.setParam(ns + "planning_plugin", pipec("planning_plugin").operator std::string());
+      nh.set_parameter({ns + "planning_plugin", pipec("planning_plugin").operator std::string()});
       std::vector<std::string> planning_adapters = pipec("request_adapters", std::vector<std::string>{});
       if(planning_adapters.size())
       {
@@ -236,7 +247,7 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
           request_adapters += " ";
           request_adapters += pa;
         }
-        nh_.setParam(ns + "request_adapters", request_adapters);
+        nh.set_parameter({ns + "request_adapters", request_adapters});
       }
       std::vector<std::string> keys = pipec.keys();
       for(const auto & k : keys)
@@ -246,11 +257,11 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
           continue;
         }
         auto value = pipec(k);
-        configToParam(nh_, ns, k, value);
+        configToParam(nh, ns, k, value);
       }
     }
 
-    nh_.setParam("moveit_manage_controllers", false);
+    nh.set_parameter({"moveit_manage_controllers", false});
 
     ns = "plan_request_params/";
     {
@@ -259,7 +270,7 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
       for(const auto & k : pr_params.keys())
       {
         auto value = pr_params(k);
-        configToParam(nh_, ns, k, value);
+        configToParam(nh, ns, k, value);
       }
     }
   }
@@ -277,11 +288,17 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
 
   robot_model_ = moveit_cpp_ptr_->getRobotModel();
 
-  obstacles_publisher_ = nh_.advertise<moveit_msgs::CollisionObject>(
+  // obstacles_publisher_ = nh_.advertise<moveit_msgs::CollisionObject>(
+  //     planning_scene_monitor::PlanningSceneMonitor::DEFAULT_COLLISION_OBJECT_TOPIC, 256);
+  // attached_objects_publisher_ = nh_.advertise<moveit_msgs::AttachedCollisionObject>(
+  //     planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC, 256);
+  // planning_scene_publisher_ = nh_.advertise<moveit_msgs::PlanningScene>(
+  //     fmt::format("{}", planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC), 10);
+  obstacles_publisher_ = nh_->create_publisher<moveit_msgs::msg::CollisionObject>(
       planning_scene_monitor::PlanningSceneMonitor::DEFAULT_COLLISION_OBJECT_TOPIC, 256);
-  attached_objects_publisher_ = nh_.advertise<moveit_msgs::AttachedCollisionObject>(
+  attached_objects_publisher_ = nh_->create_publisher<moveit_msgs::msg::AttachedCollisionObject>(
       planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC, 256);
-  planning_scene_publisher_ = nh_.advertise<moveit_msgs::PlanningScene>(
+  planning_scene_publisher_ = nh_->create_publisher<moveit_msgs::msg::PlanningScene>(
       fmt::format("{}", planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC), 10);
 }
 
@@ -296,7 +313,7 @@ void Planner::attach_object(const std::string & object_name,
   attached_objects_[object_name] = {object, X_link_object, link_name};
 
   // Then attach the object to the robot
-  moveit_msgs::AttachedCollisionObject attached_object;
+  moveit_msgs::msg::AttachedCollisionObject attached_object;
   attached_object.link_name = link_name;
   /* The header must contain a valid TF frame*/
   attached_object.object.header.frame_id = link_name;
@@ -305,10 +322,10 @@ void Planner::attach_object(const std::string & object_name,
   /* Pose of the attached object */
   attached_object.object.pose = PtToMsg(X_link_object);
 
-  moveit_msgs::CollisionObject object_msg;
+  moveit_msgs::msg::CollisionObject object_msg;
   visual_to_msg(object, attached_object.object);
   attached_object.object.operation = attached_object.object.ADD;
-  attached_objects_publisher_.publish(attached_object);
+  attached_objects_publisher_->publish(attached_object);
 }
 
 void Planner::detach_object(const std::string & object_name)
@@ -324,20 +341,20 @@ void Planner::detach_object(const std::string & object_name)
 void Planner::detach_object(const std::map<std::string, AttachedObject>::iterator & it)
 {
   {
-    moveit_msgs::AttachedCollisionObject msg;
+    moveit_msgs::msg::AttachedCollisionObject msg;
     msg.object.id = it->first;
     msg.link_name = it->second.link_name;
     msg.object.operation = msg.object.REMOVE;
-    attached_objects_publisher_.publish(msg);
+    attached_objects_publisher_->publish(msg);
     attached_objects_.erase(it);
   }
 
   { // XXX this is done to handle detached objects remaining in the scene
-    moveit_msgs::CollisionObject msg;
+    moveit_msgs::msg::CollisionObject msg;
     msg.header.frame_id = monitor_->getPlanningScene()->getPlanningFrame();
     msg.id = it->first;
     msg.operation = msg.REMOVE;
-    obstacles_publisher_.publish(msg);
+    obstacles_publisher_->publish(msg);
   }
 }
 
@@ -345,13 +362,13 @@ void Planner::add_obstacle(const rbd::parsers::Visual & object, const sva::PTran
 {
   mc_rtc::log::info("[Planner] Adding obstacle {}", object.name);
   obstacles_[object.name] = {object, X_0_object};
-  moveit_msgs::CollisionObject msg;
+  moveit_msgs::msg::CollisionObject msg;
   msg.header.frame_id = monitor_->getPlanningScene()->getPlanningFrame();
   msg.id = object.name;
   visual_to_msg(object, msg);
   msg.pose = PtToMsg(object.origin * X_0_object);
   msg.operation = msg.ADD;
-  obstacles_publisher_.publish(msg);
+  obstacles_publisher_->publish(msg);
   planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_ptr_->getPlanningSceneMonitor());
   scene->processCollisionObjectMsg(msg);
 }
@@ -365,12 +382,12 @@ void Planner::update_obstacle(const std::string & object, const sva::PTransformd
     return;
   }
   it->second.pose = X_0_object;
-  moveit_msgs::CollisionObject msg;
+  moveit_msgs::msg::CollisionObject msg;
   msg.header.frame_id = monitor_->getPlanningScene()->getPlanningFrame();
   msg.id = object;
   msg.pose = PtToMsg(it->second.object.origin * X_0_object);
   msg.operation = msg.MOVE;
-  obstacles_publisher_.publish(msg);
+  obstacles_publisher_->publish(msg);
   planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_ptr_->getPlanningSceneMonitor());
   scene->processCollisionObjectMsg(msg);
 }
@@ -388,11 +405,11 @@ void Planner::remove_obstacle(const std::string & object)
 
 void Planner::remove_obstacle(const std::map<std::string, Obstacle>::iterator & it)
 {
-  moveit_msgs::CollisionObject msg;
+  moveit_msgs::msg::CollisionObject msg;
   msg.header.frame_id = monitor_->getPlanningScene()->getPlanningFrame();
   msg.id = it->first;
   msg.operation = msg.REMOVE;
-  obstacles_publisher_.publish(msg);
+  obstacles_publisher_->publish(msg);
   planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_ptr_->getPlanningSceneMonitor());
   scene->processCollisionObjectMsg(msg);
   obstacles_.erase(it);
@@ -420,10 +437,10 @@ auto Planner::get_obstacle(const std::string & name) -> const Obstacle &
 
 void Planner::set_octomap(const octomap::OcTree & octomap_, const sva::PTransformd & base_)
 {
-  auto planning_scene_msg = moveit_msgs::PlanningScene{};
+  auto planning_scene_msg = moveit_msgs::msg::PlanningScene{};
   monitor_->getPlanningScene()->getPlanningSceneMsg(planning_scene_msg);
   auto & octomap = planning_scene_msg.world.octomap;
-  octomap.header.stamp = ros::Time::now();
+  octomap.header.stamp = nh_->now();
   octomap.header.frame_id = "robot_map";
   octomap_msgs::fullMapToMsg(octomap_, octomap.octomap);
 
@@ -439,7 +456,7 @@ void Planner::set_octomap(const octomap::OcTree & octomap_, const sva::PTransfor
   octomap.origin.orientation.z = q.z();
 
   planning_scene_msg.is_diff = true;
-  planning_scene_publisher_.publish(planning_scene_msg);
+  planning_scene_publisher_->publish(planning_scene_msg);
   planning_scene_monitor::LockedPlanningSceneRW scene(moveit_cpp_ptr_->getPlanningSceneMonitor());
   scene->processOctomapMsg(octomap);
 }
@@ -456,7 +473,7 @@ auto Planner::plan(const mc_rbdyn::RobotFrame & frame, const sva::PTransformd & 
   if(plan_with_cartesian_goal_)
   {
     // Set cartesian space goal
-    geometry_msgs::PoseStamped goal;
+    geometry_msgs::msg::PoseStamped goal;
     goal.header.frame_id = robot_model_->getModelFrame();
     PtToMsg(target, goal.pose);
     planning_->setGoal(goal, body_);
@@ -465,7 +482,7 @@ auto Planner::plan(const mc_rbdyn::RobotFrame & frame, const sva::PTransformd & 
   {
     // Set joint space goal from MoveIt IK
     auto goal_state = *(moveit_cpp_ptr_->getCurrentState());
-    geometry_msgs::Pose goal_pose;
+    geometry_msgs::msg::Pose goal_pose;
     PtToMsg(target, goal_pose);
     goal_state.setFromIK(robot_model_->getJointModelGroup(DEFAULT_GROUP), goal_pose);
     planning_->setGoal(goal_state);
@@ -504,14 +521,14 @@ auto Planner::do_plan(const mc_rbdyn::RobotFrame & frame) -> Trajectory
 {
   auto solution = planning_->plan();
   Trajectory out;
-  out.error = solution.error_code_.val;
+  out.error = solution.error_code.val;
   if(!solution)
   {
     mc_rtc::log::error("[mc_moveit] Failed to find a solution, check above for more details");
-    mc_rtc::log::info("MoveIt error code: {}", solution.error_code_);
+    mc_rtc::log::info("MoveIt error code: {}", solution.error_code.val);
     return out;
   }
-  const auto & trajectory = solution.trajectory_;
+  const auto & trajectory = solution.trajectory;
   out.waypoints.reserve(trajectory->getWayPointCount());
   out.postures.reserve(trajectory->getWayPointCount());
   auto state = std::make_shared<moveit::core::RobotState>(*(moveit_cpp_ptr_->getCurrentState()));

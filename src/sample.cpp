@@ -1,3 +1,4 @@
+#include <SpaceVecAlg/PTransform.h>
 #include <mc_control/mc_global_controller.h>
 #include <mc_rbdyn/RobotLoader.h>
 
@@ -36,9 +37,11 @@ int main(int argc, char * argv[])
   mc_control::MCGlobalController controller(config);
   auto & robot = controller.robot();
   auto & frame = [&robot, &EndEffector]() -> mc_rbdyn::RobotFrame & {
-    if(EndEffector.size())
+    const std::string efFrameName = EndEffector.empty() ? "EndEffector" : EndEffector;
+    if(!robot.hasFrame(efFrameName))
     {
-      return robot.frame(EndEffector);
+      // FIXME: only works for Panda
+      robot.makeFrame(efFrameName, robot.frame("panda_link7"), sva::PTransformd::Identity());
     }
     return robot.frame("EndEffector");
   }();
@@ -231,7 +234,7 @@ int main(int argc, char * argv[])
         mc_rtc::gui::Visual(
             "visual", [&, name]() -> const rbd::parsers::Visual & { return planner.get_obstacle(name).object; },
             [&, name]() -> const sva::PTransformd & { return planner.get_obstacle(name).pose; }));
-    moveit_msgs::CollisionObject object;
+    moveit_msgs::msg::CollisionObject object;
   };
 
   int fake_source = 0;

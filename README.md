@@ -7,7 +7,7 @@ Here are the instructions to set-up and run the basic [MoveIt Quickstart in Rviz
 Installation:
 
 ```sh
-sudo apt install ros-noetic-moveit ros-noetic-panda-moveit-config ros-noetic-moveit-visual-tools
+sudo apt install ros-humble-moveit ros-humble-moveit-visual-tools # ros-noetic-panda-moveit-config 
 ```
 
 Currently there is a bug in the tutorials: the `franka_ros` model changed but this is not (yet) reflected in ros noetic moveit packages.
