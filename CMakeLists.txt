@@ -18,10 +18,13 @@ if(NOT TARGET mc_rtc::mc_rtc_ros)
   message(FATAL_ERROR "mc_rtc ROS plugin must be installed to build mc_moveit")
 endif()
 
-find_package(moveit_ros_planning_interface REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(geometric_shapes REQUIRED)
-find_package(octomap_msgs REQUIRED)
+
+find_package(moveit_core REQUIRED)
+find_package(moveit_msgs REQUIRED)
+find_package(moveit_ros_planning REQUIRED)
+find_package(moveit_ros_planning_interface REQUIRED)
 
 set(DEFAULT_PLANNER_CONFIG_DIR ${CMAKE_INSTALL_FULL_DATADIR}/mc_moveit/)
 install(FILES etc/default_planner_config.yml DESTINATION ${DEFAULT_PLANNER_CONFIG_DIR})
@@ -47,10 +50,10 @@ target_include_directories(
          $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}/include> $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(mc_moveit PUBLIC mc_rtc::mc_control mc_rtc::mc_rtc_ros)
-target_link_libraries(
-  mc_moveit
-  PUBLIC moveit_ros_planning_interface::moveit_common_planning_interface_objects
-         octomap_msgs::octomap_msgs__rosidl_typesupport_cpp
+
+ament_target_dependencies(
+  mc_moveit PUBLIC moveit_core moveit_msgs moveit_ros_planning
+  moveit_ros_planning_interface
 )
 target_compile_definitions(mc_moveit PRIVATE -DMC_MOVEIT_EXPORTS)
 set_target_properties(

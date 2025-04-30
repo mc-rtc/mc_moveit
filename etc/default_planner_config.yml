@@ -1,21 +1,24 @@
 # Pipelines configured here
 pipeline_names: [ompl, chomp, ompl_chomp]
-# OMPL planning pipeline
+
 ompl:
   planning_plugin: ompl_interface/OMPLPlanner
+  # To optionally use Ruckig for jerk-limited smoothing, add this line to the request adapters below
+  # default_planning_request_adapters/AddRuckigTrajectorySmoothing
   request_adapters:
-    - default_planner_request_adapters/AddTimeParameterization
-    - default_planner_request_adapters/FixWorkspaceBounds
-    - default_planner_request_adapters/FixStartStateBounds
-    - default_planner_request_adapters/FixStartStateCollision
-    - default_planner_request_adapters/FixStartStatePathConstraints
-  start_state_max_bounds_error: 0.2
+      - default_planner_request_adapters/AddTimeOptimalParameterization
+      - default_planner_request_adapters/FixWorkspaceBounds
+      - default_planner_request_adapters/FixStartStateBounds
+      - default_planner_request_adapters/FixStartStateCollision
+      - default_planner_request_adapters/FixStartStatePathConstraints
   plan_with_cartesian_goal: true
+  start_state_max_bounds_error: 0.2
+
 # OMPL with CHOMP optimizer
 ompl_chomp:
   planning_plugin: ompl_interface/OMPLPlanner
   request_adapters:
-    - default_planner_request_adapters/AddTimeParameterization
+    - default_planner_request_adapters/AddTimeOptimalParameterization
     - default_planner_request_adapters/FixWorkspaceBounds
     - default_planner_request_adapters/FixStartStateBounds
     - default_planner_request_adapters/FixStartStateCollision
@@ -23,6 +26,7 @@ ompl_chomp:
     - chomp/OptimizerAdapter
   start_state_max_bounds_error: 0.2
   plan_with_cartesian_goal: false
+
   # CHOMP parameters
   planning_time_limit: 10.0
   max_iterations: 200
@@ -52,18 +56,19 @@ ompl_chomp:
   enable_failure_recovery: false
   max_recovery_attempts: 5
   trajectory_initialization_method: "fillTrajectory"
+
 # CHOMP pipeline
 chomp:
   planning_plugin: chomp_interface/CHOMPPlanner
+  # The order of the elements in the adapter corresponds to the order they are processed by the motion planning pipeline.
   request_adapters:
-    - default_planner_request_adapters/AddTimeParameterization
-    - default_planner_request_adapters/FixWorkspaceBounds
-    - default_planner_request_adapters/FixStartStateBounds
-    - default_planner_request_adapters/FixStartStateCollision
-    - default_planner_request_adapters/FixStartStatePathConstraints
-  start_state_max_bounds_error: 0.2
+  - default_planner_request_adapters/AddTimeOptimalParameterization
+  - default_planner_request_adapters/FixWorkspaceBounds
+  - default_planner_request_adapters/FixStartStateBounds
+  - default_planner_request_adapters/FixStartStateCollision
+  - default_planner_request_adapters/FixStartStatePathConstraints
   plan_with_cartesian_goal: false
-  # CHOMP parameters
+
   planning_time_limit: 10.0
   max_iterations: 200
   max_iterations_after_collision_free: 5
@@ -92,9 +97,10 @@ chomp:
   enable_failure_recovery: false
   max_recovery_attempts: 5
   trajectory_initialization_method: "quintic-spline"
+
 # Request parameters
 plan_request_params:
   planning_attempts: 5
-  planning_pipeline: ompl
+  planning_pipeline: ompl # or ompl_chomp or chomp
   max_velocity_scaling_factor: 0.8
   max_acceleration_scaling_factor: 0.8

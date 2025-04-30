@@ -124,14 +124,12 @@ int main(int argc, char * argv[])
             posture_task->target(robot.module().stance());
             auto & mbc = controller.controller().robot().mbc();
             mbc.zero(robot.mb());
-            for(const auto & [name, config] : robot.module().stance()) { mbc.q[robot.jointIndexByName(name)] =
-            config; }
+            for(const auto & [name, config] : robot.module().stance()) { mbc.q[robot.jointIndexByName(name)] = config; }
           }
           std::this_thread::sleep_until(now + dt);
           now = std::chrono::steady_clock::now();
         }
       });
-
 
   auto & gui = *controller.controller().gui();
   sva::PTransformd target = frame.position();
@@ -283,7 +281,6 @@ int main(int argc, char * argv[])
                    mc_rtc::gui::Button("Exit", [&]() { controller.running = false; }));
   };
   setup_interface("Target posture");
-
 
   if(run_th.joinable()) { run_th.join(); }
   rclcpp::shutdown();

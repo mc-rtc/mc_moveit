@@ -1,6 +1,8 @@
 #include <mc_moveit/Planner.h>
+#include <mc_rtc/io_utils.h>
 
 #include <mc_rbdyn/Robot.h>
+#include <RBDyn/parsers/urdf.h>
 
 #include <geometric_shapes/mesh_operations.h>
 #include <geometric_shapes/shape_operations.h>
@@ -44,11 +46,34 @@ static void configToParam(rclcpp::Node & nh,
                           const mc_rtc::Configuration & value)
 {
   if(value.isString()) { nh.set_parameter({ns + k, value.operator std::string()}); }
-  else if(value.isNumeric()) { nh.set_parameter({ns + k, value.operator double()}); }
+  else if(value.isNumeric())
+  {
+    if(value.isInteger()) { nh.set_parameter({ns + k, value.operator int()}); }
+    else { nh.set_parameter({ns + k, value.operator double()}); }
+  }
   else { nh.set_parameter({ns + k, value.operator bool()}); }
 }
 
 static constexpr auto DEFAULT_GROUP = "default_group";
+
+static std::string robot_to_urdf(const mc_rbdyn::Robot & robot)
+{
+
+  const auto & rm = robot.module();
+  /** Save the URDF */
+  rbd::parsers::ParserResult result;
+  result.mb = rm.mb;
+  result.mbc = rm.mbc;
+  result.mbg = rm.mbg;
+  result.visual = rm._visual;
+  result.collision = rm._collision;
+  result.limits.lower = rm._bounds[0];
+  result.limits.upper = rm._bounds[1];
+  result.limits.velocity = rm._bounds[3];
+  result.limits.torque = rm._bounds[5];
+  result.name = rm.name;
+  return rbd::parsers::to_urdf(result);
+}
 
 static std::string make_simple_srdf(const mc_rbdyn::Robot & robot, const std::string & ef_body)
 {
@@ -161,6 +186,7 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::msg:
 Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, const PlannerConfig & config)
 : rclcpp::Node(config.ns, rclcpp::NodeOptions{}.allow_undeclared_parameters(true)), body_(ef_body)
 {
+  // Do not call shared_from_this() here!
 }
 
 Planner::~Planner()
@@ -185,96 +211,126 @@ void Planner::initialize(const mc_rbdyn::Robot & robot, const std::string & ef_b
     mc_rtc::log::error_and_throw<std::runtime_error>(
         "[mc_moveit] mc_rtc ROS plugin must be enabled for this controller to work");
   }
+  auto & nh = *shared_from_this();
 
   std::string robot_tf_prefix = "/control";
   if(robot.robotIndex() != 0) { robot_tf_prefix = fmt::format("/control/env_{}", robot.robotIndex()); }
 
-  // FIXME This should not be needed but it fixes many TF warnings from MoveIt as it is not looking into the prefixed TF
-  // for transformation involving the robot's base
-  geometry_msgs::msg::TransformStamped base_to_base;
-  base_to_base.header.frame_id = fmt::format("{}/{}", robot_tf_prefix, robot.mb().body(0).name());
-  base_to_base.child_frame_id = robot.mb().body(0).name();
-  base_to_base.transform.rotation.w = 1.0;
-  tf_static_caster_->sendTransform(base_to_base);
+  /**
+   * In the following, we load the moveit config parameters.
+   * These configuration parameters are usually defined as a colcon package containing a hierarchy of config yaml files
+   * and robot urdf/srdf See
+   * https://moveit.picknik.ai/main/doc/how_to_guides/moveit_configuration/moveit_configuration_tutorial.html
+   *
+   * For example:
+   * my_robot_moveit_config
+   * config/
+   *     kinematics.yaml
+   *     joint_limits.yaml
+   *     *_planning.yaml
+   *     moveit_controllers.yaml
+   *     moveit_cpp.yaml
+   *     sensors_3d.yaml
+   *     ...
+   * launch/
+   * .setup_assistant
+   * CMakeLists.txt
+   * package.xml
+   *
+   * However in the case of mc_moveit, we want to dynamically generate these parameters according to the
+   * robots loaded in the controller and the task at hand. Thus we specify them manually here
+   * Unfortunately documentation is rather lacking on how to do it cleanly
+   */
 
-  // FIXME To support multiple planners for a single robot we should nest all this settings in a proper namespace and
-  // copy some settings over from the robot_tf_prefix
+  // Configure robot
+  auto urdf = robot_to_urdf(robot);
+  std::cout << "urdf: " << urdf << std::endl;
+  declare_parameter("robot_description", urdf);
+  // Create a simple sdrf with a "default_group"
+  auto srdf = make_simple_srdf(robot, ef_body);
+  std::cout << "srdf: " << srdf << std::endl;
+  declare_parameter<std::string>("robot_description_semantic", srdf);
+  // Robot is now loaded
 
-  // FIXME Mimic/Support loading a lot of these settings via roslaunch
-  set_parameter({fmt::format("{}/robot_description_semantic", robot_tf_prefix), make_simple_srdf(robot, ef_body)});
-  {
-    std::string ns = fmt::format("{}/robot_description_kinematics/{}/", robot_tf_prefix, DEFAULT_GROUP);
-    set_parameters({{ns + "kinematics_solver", "kdl_kinematics_plugin/KDLKinematicsPlugin"},
-                    {ns + "kinematics_solver_search_resolution", 0.005},
-                    {ns + "kinematics_solver_timeout", 500 * 0.005}});
+  { // Declare kinematics.yaml parameters
+    std::string ns = "default_group"; // Name of the joint group from the SRDF file
+    declare_parameters<std::string>(ns, {{"kinematics_solver", "kdl_kinematics_plugin/KDLKinematicsPlugin"}});
+    declare_parameters<double>(
+        ns, {{"kinematics_solver_search_resolution", 0.005}, {"kinematics_solver_timeout", 500 * 0.005}});
   }
-  {
-    std::string ns = "planning_scene_monitor_options/";
-    set_parameters(
-        {{ns + "name", config.ns},
-         {ns + "robot_description", fmt::format("{}/robot_description", robot_tf_prefix)},
-         {ns + "joint_state_topic", fmt::format("{}/joint_states", robot_tf_prefix)},
-         {ns + "attached_collision_object_topic",
-          fmt::format("{}/{}", config.ns,
-                      planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC)},
-         {ns + "monitored_planning_scene_topic",
-          fmt::format("{}/{}", config.ns,
-                      planning_scene_monitor::PlanningSceneMonitor::MONITORED_PLANNING_SCENE_TOPIC)},
-         {ns + "publish_planning_scene_topic",
-          fmt::format("{}/{}", config.ns,
-                      planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC)}});
 
-    ns = "planning_pipelines/";
-    std::vector<std::string> pipeline_names = config.config("pipeline_names");
-    set_parameters({{ns + "pipeline_names", pipeline_names}, {ns + "namespace", config.ns}});
+  auto opts = MoveItCpp::Options{shared_from_this()};
+  { // Planning Scene Monitor Options
+    auto & psmo = opts.planning_scene_monitor_options;
+    psmo.name = config.ns;
+    psmo.joint_state_topic = robot_tf_prefix + "/joint_states";
+    psmo.attached_collision_object_topic = fmt::format(
+        "{}/{}", config.ns, planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC);
+    psmo.monitored_planning_scene_topic =
+        fmt::format("{}/{}", config.ns, planning_scene_monitor::PlanningSceneMonitor::MONITORED_PLANNING_SCENE_TOPIC);
+    psmo.publish_planning_scene_topic =
+        fmt::format("{}/{}", config.ns, planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC);
+  }
 
-    for(const auto & pipeline : pipeline_names)
+  { // Configure available planning pipelines
+    // from mc_rtc configuration entry "pipeline_names"
+    auto & ppo = opts.planning_pipeline_options;
+    ppo.pipeline_names = config.config("pipeline_names");
+    ppo.parent_namespace = config.ns;
+
+    for(const auto & pipeline : ppo.pipeline_names)
     {
-      ns = fmt::format("{}/", pipeline);
+      auto ns = fmt::format("{}.", pipeline);
       auto pipec = config.config(pipeline);
-      set_parameter({ns + "planning_plugin", pipec("planning_plugin").operator std::string()});
-      std::vector<std::string> planning_adapters = pipec("request_adapters", std::vector<std::string>{});
-      if(planning_adapters.size())
-      {
-        std::string request_adapters = planning_adapters[0];
-        for(size_t i = 1; i < planning_adapters.size(); ++i)
-        {
-          const auto & pa = planning_adapters[i];
-          request_adapters += " ";
-          request_adapters += pa;
-        }
-        set_parameter({ns + "request_adapters", request_adapters});
-      }
+
+      auto planning_plugins = pipec("planning_plugins", std::vector<std::string>{});
+      auto planning_plugins_str = mc_rtc::io::to_string(planning_plugins);
+      declare_parameter(ns + "planning_plugins", planning_plugins_str);
+
+      std::vector<std::string> request_adapters = pipec("request_adapters", std::vector<std::string>{});
+      mc_rtc::log::info("Adding the following request_adapters: {}", mc_rtc::io::to_string(request_adapters));
+      declare_parameter(ns + "request_adapters", mc_rtc::io::to_string(request_adapters, " "));
+
+      std::vector<std::string> response_adapters = pipec("response_adapters", std::vector<std::string>{});
+      declare_parameter(ns + "response_adapters", mc_rtc::io::to_string(response_adapters, " "));
+
       std::vector<std::string> keys = pipec.keys();
       for(const auto & k : keys)
       {
-        if(k == "request_adapters" || k == "planning_plugin") { continue; }
+        if(pipec(k).isArray() || k == "planner_configs" || k == "default_group")
+        {
+          continue;
+        } // todo seamlessly handle arrays
         auto value = pipec(k);
         configToParam(*this, ns, k, value);
       }
     }
+  }
 
-    set_parameter({"moveit_manage_controllers", false});
-
-    ns = "plan_request_params/";
+  {
+    auto ns = "plan_request_params.";
+    auto pr_params = config.config("plan_request_params");
+    plan_with_cartesian_goal_ = config.config(pr_params("planning_pipeline"))("plan_with_cartesian_goal");
+    for(const auto & k : pr_params.keys())
     {
-      auto pr_params = config.config("plan_request_params");
-      plan_with_cartesian_goal_ = config.config(pr_params("planning_pipeline"))("plan_with_cartesian_goal");
-      for(const auto & k : pr_params.keys())
-      {
-        auto value = pr_params(k);
-        configToParam(*this, ns, k, value);
-      }
+      auto value = pr_params(k);
+      configToParam(nh, ns, k, value);
     }
   }
 
-  auto opts = MoveItCpp::Options{shared_from_this()};
-  {
-    std::string ns = "planning_scene_monitor_options/";
-    // opts.planning_scene_monitor_options.robot_description = ns + "robot_description";
+  { // Do not use ros_control
+    declare_parameter<bool>("moveit_manage_controllers", false);
+    declare_parameter<std::string>("moveit_controller_manager",
+                                   "moveit_simple_controller_manager/MoveItSimpleControllerManager");
   }
 
   moveit_cpp_ptr_ = std::make_shared<MoveItCpp>(Node::shared_from_this(), opts);
+
+  /**
+   * Summarize config
+   */
+  mc_rtc::log::info("[mc_moveit] Available pipelines:");
+  for(const auto & [name, _] : moveit_cpp_ptr_->getPlanningPipelines()) { mc_rtc::log::info("- {}:", name); }
 
   monitor_ = moveit_cpp_ptr_->getPlanningSceneMonitor();
   monitor_->providePlanningSceneService(
@@ -294,6 +350,14 @@ void Planner::initialize(const mc_rbdyn::Robot & robot, const std::string & ef_b
       planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC, 256);
   planning_scene_publisher_ = this->create_publisher<moveit_msgs::msg::PlanningScene>(
       fmt::format("{}", planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC), 10);
+
+  // FIXME This should not be needed but it fixes many TF warnings from MoveIt as it is not looking into the prefixed TF
+  // for transformation involving the robot's base
+  geometry_msgs::msg::TransformStamped base_to_base;
+  base_to_base.header.frame_id = fmt::format("{}/{}", robot_tf_prefix, robot.mb().body(0).name());
+  base_to_base.child_frame_id = robot.mb().body(0).name();
+  base_to_base.transform.rotation.w = 1.0;
+  tf_static_caster_->sendTransform(base_to_base);
 }
 
 void Planner::attach_object(const std::string & object_name,
