@@ -9,6 +9,7 @@ namespace po = boost::program_options;
 
 int main(int argc, char * argv[])
 {
+  rclcpp::init(argc, argv);
   std::string MainRobot = "Panda";
   std::string EndEffector = "";
 
@@ -98,6 +99,9 @@ int main(int argc, char * argv[])
 
   bool do_quick_reset = false;
 
+  std::cout << "creating planner now" << std::endl;
+  auto planner = mc_moveit::Planner::create(controller.robot(), frame.body());
+
   std::thread run_th(
       [&]()
       {
@@ -120,14 +124,14 @@ int main(int argc, char * argv[])
             posture_task->target(robot.module().stance());
             auto & mbc = controller.controller().robot().mbc();
             mbc.zero(robot.mb());
-            for(const auto & [name, config] : robot.module().stance()) { mbc.q[robot.jointIndexByName(name)] = config; }
+            for(const auto & [name, config] : robot.module().stance()) { mbc.q[robot.jointIndexByName(name)] =
+            config; }
           }
           std::this_thread::sleep_until(now + dt);
           now = std::chrono::steady_clock::now();
         }
       });
 
-  mc_moveit::Planner planner(controller.robot(), frame.body());
 
   auto & gui = *controller.controller().gui();
   sva::PTransformd target = frame.position();
@@ -140,7 +144,7 @@ int main(int argc, char * argv[])
       mc_rtc::log::error("Plan execution in progress");
       return;
     }
-    trajectory = planner.plan(frame, target);
+    trajectory = planner->plan(frame, target);
     if(trajectory.error == 1)
     {
       str_state = "Execution ready";
@@ -155,7 +159,7 @@ int main(int argc, char * argv[])
       mc_rtc::log::error("Plan execution in progress");
       return;
     }
-    trajectory = planner.plan(frame, posture_target);
+    trajectory = planner->plan(frame, posture_target);
     if(trajectory.error == 1)
     {
       str_state = "Execution ready";
@@ -196,10 +200,10 @@ int main(int argc, char * argv[])
   };
 
   auto update_obstacle_position = [&](const std::string & name, const sva::PTransformd & pos)
-  { planner.update_obstacle(name, pos); };
+  { planner->update_obstacle(name, pos); };
   auto remove_obstacle = [&](const std::string & name)
   {
-    planner.remove_obstacle(name);
+    planner->remove_obstacle(name);
     gui.removeCategory({"MoveIt", "Collisions", name});
   };
   auto add_obstacle = [&](const std::string & name, const Eigen::Vector3d & size)
@@ -218,15 +222,15 @@ int main(int argc, char * argv[])
     color.b = 0.0;
     color.a = 0.7;
     visual.material.data = color;
-    planner.add_obstacle(visual);
+    planner->add_obstacle(visual);
     gui.addElement(
         {"MoveIt", "Collisions", name}, mc_rtc::gui::Button("Remove", [&, name]() { remove_obstacle(name); }),
         mc_rtc::gui::Transform(
-            "position", [&, name]() -> const sva::PTransformd & { return planner.get_obstacle(name).pose; },
+            "position", [&, name]() -> const sva::PTransformd & { return planner->get_obstacle(name).pose; },
             [&, name](const sva::PTransformd & p) { update_obstacle_position(name, p); }),
         mc_rtc::gui::Visual(
-            "visual", [&, name]() -> const rbd::parsers::Visual & { return planner.get_obstacle(name).object; },
-            [&, name]() -> const sva::PTransformd & { return planner.get_obstacle(name).pose; }));
+            "visual", [&, name]() -> const rbd::parsers::Visual & { return planner->get_obstacle(name).object; },
+            [&, name]() -> const sva::PTransformd & { return planner->get_obstacle(name).pose; }));
     moveit_msgs::msg::CollisionObject object;
   };
 
@@ -280,6 +284,8 @@ int main(int argc, char * argv[])
   };
   setup_interface("Target posture");
 
+
   if(run_th.joinable()) { run_th.join(); }
+  rclcpp::shutdown();
   return 0;
 }

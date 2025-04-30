@@ -9,8 +9,10 @@
 #include <moveit_msgs/msg/detail/planning_scene__struct.hpp>
 #include <octomap_msgs/conversions.h>
 #include <octomap_msgs/msg/octomap_with_pose.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 #include <mc_rtc_ros/ros.h>
 #include <octomap/OcTree.h>
+#include <rclcpp/node_options.hpp>
 
 namespace mc_moveit
 {
@@ -157,10 +159,21 @@ static void visual_to_msg(const rbd::parsers::Visual & visual, moveit_msgs::msg:
 }
 
 Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, const PlannerConfig & config)
-: nh_(std::make_shared<rclcpp::Node>(config.ns, rclcpp::NodeOptions{}.allow_undeclared_parameters(true))),
-  body_(ef_body), tf_static_caster_(*nh_)
+: rclcpp::Node(config.ns, rclcpp::NodeOptions{}.allow_undeclared_parameters(true)), body_(ef_body)
 {
-  auto & nh = *nh_;
+}
+
+Planner::~Planner()
+{
+  if(spin_thread_.joinable()) { spin_thread_.join(); }
+}
+
+void Planner::initialize(const mc_rbdyn::Robot & robot, const std::string & ef_body, const PlannerConfig & config)
+{
+  // We have to spin within the planner to handle parameters
+  spin_thread_ = std::thread([this]() { rclcpp::spin(shared_from_this()); });
+
+  tf_static_caster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(shared_from_this());
 
   if(!robot.hasBody(ef_body))
   {
@@ -182,22 +195,22 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
   base_to_base.header.frame_id = fmt::format("{}/{}", robot_tf_prefix, robot.mb().body(0).name());
   base_to_base.child_frame_id = robot.mb().body(0).name();
   base_to_base.transform.rotation.w = 1.0;
-  tf_static_caster_.sendTransform(base_to_base);
+  tf_static_caster_->sendTransform(base_to_base);
 
   // FIXME To support multiple planners for a single robot we should nest all this settings in a proper namespace and
   // copy some settings over from the robot_tf_prefix
 
   // FIXME Mimic/Support loading a lot of these settings via roslaunch
-  nh.set_parameter({fmt::format("{}/robot_description_semantic", robot_tf_prefix), make_simple_srdf(robot, ef_body)});
+  set_parameter({fmt::format("{}/robot_description_semantic", robot_tf_prefix), make_simple_srdf(robot, ef_body)});
   {
     std::string ns = fmt::format("{}/robot_description_kinematics/{}/", robot_tf_prefix, DEFAULT_GROUP);
-    nh.set_parameters({{ns + "kinematics_solver", "kdl_kinematics_plugin/KDLKinematicsPlugin"},
-                       {ns + "kinematics_solver_search_resolution", 0.005},
-                       {ns + "kinematics_solver_timeout", 500 * 0.005}});
+    set_parameters({{ns + "kinematics_solver", "kdl_kinematics_plugin/KDLKinematicsPlugin"},
+                    {ns + "kinematics_solver_search_resolution", 0.005},
+                    {ns + "kinematics_solver_timeout", 500 * 0.005}});
   }
   {
     std::string ns = "planning_scene_monitor_options/";
-    nh.set_parameters(
+    set_parameters(
         {{ns + "name", config.ns},
          {ns + "robot_description", fmt::format("{}/robot_description", robot_tf_prefix)},
          {ns + "joint_state_topic", fmt::format("{}/joint_states", robot_tf_prefix)},
@@ -213,13 +226,13 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
 
     ns = "planning_pipelines/";
     std::vector<std::string> pipeline_names = config.config("pipeline_names");
-    nh.set_parameters({{ns + "pipeline_names", pipeline_names}, {ns + "namespace", config.ns}});
+    set_parameters({{ns + "pipeline_names", pipeline_names}, {ns + "namespace", config.ns}});
 
     for(const auto & pipeline : pipeline_names)
     {
       ns = fmt::format("{}/", pipeline);
       auto pipec = config.config(pipeline);
-      nh.set_parameter({ns + "planning_plugin", pipec("planning_plugin").operator std::string()});
+      set_parameter({ns + "planning_plugin", pipec("planning_plugin").operator std::string()});
       std::vector<std::string> planning_adapters = pipec("request_adapters", std::vector<std::string>{});
       if(planning_adapters.size())
       {
@@ -230,18 +243,18 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
           request_adapters += " ";
           request_adapters += pa;
         }
-        nh.set_parameter({ns + "request_adapters", request_adapters});
+        set_parameter({ns + "request_adapters", request_adapters});
       }
       std::vector<std::string> keys = pipec.keys();
       for(const auto & k : keys)
       {
         if(k == "request_adapters" || k == "planning_plugin") { continue; }
         auto value = pipec(k);
-        configToParam(nh, ns, k, value);
+        configToParam(*this, ns, k, value);
       }
     }
 
-    nh.set_parameter({"moveit_manage_controllers", false});
+    set_parameter({"moveit_manage_controllers", false});
 
     ns = "plan_request_params/";
     {
@@ -250,11 +263,18 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
       for(const auto & k : pr_params.keys())
       {
         auto value = pr_params(k);
-        configToParam(nh, ns, k, value);
+        configToParam(*this, ns, k, value);
       }
     }
   }
-  moveit_cpp_ptr_ = std::make_shared<MoveItCpp>(nh_);
+
+  auto opts = MoveItCpp::Options{shared_from_this()};
+  {
+    std::string ns = "planning_scene_monitor_options/";
+    // opts.planning_scene_monitor_options.robot_description = ns + "robot_description";
+  }
+
+  moveit_cpp_ptr_ = std::make_shared<MoveItCpp>(Node::shared_from_this(), opts);
 
   monitor_ = moveit_cpp_ptr_->getPlanningSceneMonitor();
   monitor_->providePlanningSceneService(
@@ -268,17 +288,11 @@ Planner::Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, con
 
   robot_model_ = moveit_cpp_ptr_->getRobotModel();
 
-  // obstacles_publisher_ = nh_.advertise<moveit_msgs::CollisionObject>(
-  //     planning_scene_monitor::PlanningSceneMonitor::DEFAULT_COLLISION_OBJECT_TOPIC, 256);
-  // attached_objects_publisher_ = nh_.advertise<moveit_msgs::AttachedCollisionObject>(
-  //     planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC, 256);
-  // planning_scene_publisher_ = nh_.advertise<moveit_msgs::PlanningScene>(
-  //     fmt::format("{}", planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC), 10);
-  obstacles_publisher_ = nh_->create_publisher<moveit_msgs::msg::CollisionObject>(
+  obstacles_publisher_ = this->create_publisher<moveit_msgs::msg::CollisionObject>(
       planning_scene_monitor::PlanningSceneMonitor::DEFAULT_COLLISION_OBJECT_TOPIC, 256);
-  attached_objects_publisher_ = nh_->create_publisher<moveit_msgs::msg::AttachedCollisionObject>(
+  attached_objects_publisher_ = this->create_publisher<moveit_msgs::msg::AttachedCollisionObject>(
       planning_scene_monitor::PlanningSceneMonitor::DEFAULT_ATTACHED_COLLISION_OBJECT_TOPIC, 256);
-  planning_scene_publisher_ = nh_->create_publisher<moveit_msgs::msg::PlanningScene>(
+  planning_scene_publisher_ = this->create_publisher<moveit_msgs::msg::PlanningScene>(
       fmt::format("{}", planning_scene_monitor::PlanningSceneMonitor::DEFAULT_PLANNING_SCENE_TOPIC), 10);
 }
 
@@ -411,7 +425,7 @@ void Planner::set_octomap(const octomap::OcTree & octomap_, const sva::PTransfor
   auto planning_scene_msg = moveit_msgs::msg::PlanningScene{};
   monitor_->getPlanningScene()->getPlanningSceneMsg(planning_scene_msg);
   auto & octomap = planning_scene_msg.world.octomap;
-  octomap.header.stamp = nh_->now();
+  octomap.header.stamp = this->now();
   octomap.header.frame_id = "robot_map";
   octomap_msgs::fullMapToMsg(octomap_, octomap.octomap);
 
@@ -535,8 +549,8 @@ std::future<PlannerPtr> make_planner(const mc_rbdyn::Robot & robot,
                                      const std::string & ef_body,
                                      const PlannerConfig & config)
 {
-  return std::async(std::launch::async, [&robot, ef_body, config]()
-                    { return std::unique_ptr<Planner>(new Planner(robot, ef_body, config)); });
+  return std::async(std::launch::async,
+                    [&robot, ef_body, config]() { return Planner::create(robot, ef_body, config); });
 }
 
 std::shared_ptr<mc_moveit::BSplineTrajectoryTask> Planner::Trajectory::setup_bspline_task(

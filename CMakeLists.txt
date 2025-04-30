@@ -72,5 +72,3 @@ add_executable(mc_moveit_sample src/sample.cpp)
 target_link_libraries(
   mc_moveit_sample PUBLIC mc_moveit mc_rtc::mc_control Boost::program_options
 )
-
-add_subdirectory(cmake)

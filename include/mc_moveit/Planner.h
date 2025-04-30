@@ -8,6 +8,7 @@
 #include <mc_rtc/ros.h>
 #include <moveit_msgs/msg/detail/attached_collision_object__struct.hpp>
 #include <moveit_msgs/msg/detail/collision_object__struct.hpp>
+#include <memory>
 #include <rclcpp/publisher.hpp>
 
 #include <mc_rbdyn/RobotFrame.h>
@@ -53,23 +54,18 @@ struct MC_MOVEIT_DLLAPI PlannerConfig
  * MoveIt and get them in a usable form for an mc_rtc controller
  *
  */
-struct MC_MOVEIT_DLLAPI Planner
+struct MC_MOVEIT_DLLAPI Planner : rclcpp::Node
 {
-  /** Constructor
-   *
-   * Constructing the planner interface is relatively lenghty. If this should be invoked inside a controller you should
-   * prefer the async helper: \ref make_planner
-   *
-   * \param robot Robot that will be used by the planner
-   *
-   * \param ef_body End-effector body that will be used by the planner, this body should figure in the robot's URDF
-   * otherwise the planner cannot work. However through the interface you can request plans for frames that do not
-   * appear in the URDF
-   *
-   * \param ns ROS namespace for MoveIt. If you are using multiple planners instances this should be unique for each
-   * instance
-   */
-  Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, const PlannerConfig & = {});
+  static std::shared_ptr<Planner> create(const mc_rbdyn::Robot & robot,
+                                         const std::string & ef_body,
+                                         const PlannerConfig & config = {})
+  {
+    std::shared_ptr<Planner> instance = std::shared_ptr<Planner>(new Planner(robot, ef_body, config));
+    instance->initialize(robot, ef_body, config); // Safe to call shared_from_this() now
+    return instance;
+  }
+
+  virtual ~Planner();
 
   struct Obstacle
   {
@@ -223,9 +219,31 @@ struct MC_MOVEIT_DLLAPI Planner
                                      const std::map<std::string, std::vector<double>> & target);
 
 private:
-  rclcpp::Node::SharedPtr nh_;
+  /**
+   * Private constructor to  ensure that the node is created as a shared_ptr
+   * Use the Planner::create factory instead
+   */
+  Planner(const mc_rbdyn::Robot & robot, const std::string & ef_body, const PlannerConfig & config = {});
+
+  /** Constructor
+   *
+   * Constructing the planner interface is relatively lenghty. If this should be invoked inside a controller you should
+   * prefer the async helper: \ref make_planner
+   *
+   * \param robot Robot that will be used by the planner
+   *
+   * \param ef_body End-effector body that will be used by the planner, this body should figure in the robot's URDF
+   * otherwise the planner cannot work. However through the interface you can request plans for frames that do not
+   * appear in the URDF
+   *
+   * \param ns ROS namespace for MoveIt. If you are using multiple planners instances this should be unique for each
+   * instance
+   */
+  void initialize(const mc_rbdyn::Robot & robot, const std::string & ef_body, const PlannerConfig & = {});
+
+private:
   std::string body_;
-  tf2_ros::StaticTransformBroadcaster tf_static_caster_;
+  std::unique_ptr<tf2_ros::StaticTransformBroadcaster> tf_static_caster_;
   std::atomic<bool> busy_{false};
   std::shared_ptr<MoveItCpp> moveit_cpp_ptr_;
   planning_scene_monitor::PlanningSceneMonitorPtr monitor_;
@@ -243,9 +261,11 @@ private:
   void detach_object(const std::map<std::string, AttachedObject>::iterator & it);
 
   Trajectory do_plan(const mc_rbdyn::RobotFrame & frame);
+
+  std::thread spin_thread_;
 };
 
-using PlannerPtr = std::unique_ptr<Planner>;
+using PlannerPtr = std::shared_ptr<Planner>;
 
 MC_MOVEIT_DLLAPI std::future<PlannerPtr> make_planner(const mc_rbdyn::Robot & robot,
                                                       const std::string & ef_body,
