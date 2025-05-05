@@ -1,35 +1,17 @@
-# MoveIt
+# mc_moveit 
 
-## MoveIt quickstart tutorial
+mc_moveit is a simple interface between the [mc_rtc](https://github.com/jrl-umi3218/mc_rtc) and ros' [MoveIt](https://moveit.picknik.ai).
 
-Here are the instructions to set-up and run the basic [MoveIt Quickstart in Rviz tutorial](https://ros-planning.github.io/moveit_tutorials/doc/quickstart_in_rviz/quickstart_in_rviz_tutorial.html#)
+At it's heart it provides a `mc_moveit::Planner` interface whose role is to initialize the various planners, add collision shapes/objects (all rbdyn types supported), provide targets and plan trajectories. Upon success, it provides a `mc_moveit::Trajectory` result that can be automatically executed with the provided tasks, or you can write your own control.
 
-Installation:
+For more detailed use, please refer to the [src/sample.cpp](./src/sample.cpp) controller. You can run it using:
 
 ```sh
-sudo apt install ros-humble-moveit ros-humble-moveit-visual-tools # ros-noetic-panda-moveit-config
+./mc_moveit_sample
 ```
 
-Currently there is a bug in the tutorials: the `franka_ros` model changed but this is not (yet) reflected in ros noetic moveit packages.
-As written in [CHANGELOG](https://github.com/frankaemika/franka_ros/blob/71ff2e06cdbe3ebb51ef67933dc068909ba9dec9/CHANGELOG.md) in [franka_ros](https://github.com/frankaemika/franka_ros) (0.8.0 - 2021-08-03):
+and visualize it with
 
-> BREAKING Remove panda_arm_hand.urdf.xacro. Use panda_arm.urdf.xacro hand:=true instead.
-
-To fix the issue, edit `/opt/ros/noetic/share/panda_moveit_config/launch/planning_context.launch` (as root) and replace:
-
-```xml
-<!-- Load universal robot description format (URDF) -->
-<param if="$(eval arg('load_robot_description') and arg('load_gripper'))" name="$(arg robot_description)" command="$(find xacro)/xacro '$(find franka_description)/robots/panda_arm.urdf.xacro' hand:=true"/>
-<param if="$(eval arg('load_robot_description') and not arg('load_gripper'))" name="$(arg robot_description)" command="$(find xacro)/xacro '$(find franka_description)/robots/panda_arm.urdf.xacro'"/>
+```sh
+ros2 launch mc_rtc_ticker display.launch
 ```
-
-by
-
-```xml
-<!-- Load universal robot description format (URDF) -->
-<param name="$(arg robot_description)" command="$(find xacro)/xacro $(find franka_description)/robots/panda_arm.urdf.xacro hand:=$(arg load_gripper)" />
-```
-
-Alternatively you can [install MoveIt from source](https://ros-planning.github.io/moveit_tutorials/doc/getting_started/getting_started.html) and ignore the fix above.
-
-Then follow the [MoveIt Quickstart in Rviz tutorial](https://ros-planning.github.io/moveit_tutorials/doc/quickstart_in_rviz/quickstart_in_rviz_tutorial.html#).
