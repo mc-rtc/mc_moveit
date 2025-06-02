@@ -101,6 +101,6 @@ chomp:
 # Request parameters
 plan_request_params:
   planning_attempts: 5
-  planning_pipeline: ompl # or ompl_chomp or chomp
+  planning_pipeline: ompl # or ompl_chomp or chomp 
   max_velocity_scaling_factor: 0.8
   max_acceleration_scaling_factor: 0.8

@@ -1,0 +1,4 @@
+add_fsm_state_simple(MoveItState_Initial)
+
+add_fsm_state_simple(MoveItPlan)
+target_link_libraries(MoveItPlan PUBLIC mc_moveit::mc_moveit)

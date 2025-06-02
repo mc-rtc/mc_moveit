@@ -26,7 +26,7 @@ find_package(moveit_msgs REQUIRED)
 find_package(moveit_ros_planning REQUIRED)
 find_package(moveit_ros_planning_interface REQUIRED)
 
-set(DEFAULT_PLANNER_CONFIG_DIR ${CMAKE_INSTALL_FULL_DATADIR}/mc_moveit/)
+set(DEFAULT_PLANNER_CONFIG_DIR ${CMAKE_INSTALL_FULL_DATADIR}/mc_moveit)
 install(FILES etc/default_planner_config.yml DESTINATION ${DEFAULT_PLANNER_CONFIG_DIR})
 
 configure_file(
@@ -71,7 +71,14 @@ install(
 )
 
 find_package(Boost REQUIRED COMPONENTS program_options)
-add_executable(mc_moveit_sample src/sample.cpp)
+add_executable(mc_moveit_sample utils/sample.cpp)
 target_link_libraries(
   mc_moveit_sample PUBLIC mc_moveit mc_rtc::mc_control Boost::program_options
 )
+
+add_subdirectory(src)
+
+set(AROBASE "@")
+configure_file(etc/MoveItFSM.in.yaml "${CMAKE_CURRENT_BINARY_DIR}/etc/MoveItFSM.yaml")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/etc/MoveItFSM.yaml" DESTINATION "${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/etc")
+

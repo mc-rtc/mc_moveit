@@ -1,0 +1,3 @@
+#include "MoveItFSM.h"
+
+CONTROLLER_CONSTRUCTOR("MoveItFSM", MoveItFSM)
