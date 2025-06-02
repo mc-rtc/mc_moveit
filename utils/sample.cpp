@@ -43,7 +43,7 @@ int main(int argc, char * argv[])
     if(!robot.hasFrame(efFrameName))
     {
       // FIXME: only works for Panda
-      robot.makeFrame(efFrameName, robot.frame("panda_link7"), sva::PTransformd::Identity());
+      robot.makeFrame(efFrameName, robot.frame("tool0"), sva::PTransformd::Identity());
     }
     return robot.frame("EndEffector");
   }();
