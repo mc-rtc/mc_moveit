@@ -2,9 +2,7 @@
 
 #include "../MoveItFSM.h"
 
-void MoveItState_Initial::configure(const mc_rtc::Configuration & config)
-{
-}
+void MoveItState_Initial::configure(const mc_rtc::Configuration & config) {}
 
 void MoveItState_Initial::start(mc_control::fsm::Controller & ctl_)
 {

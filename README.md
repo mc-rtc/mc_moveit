@@ -1,4 +1,4 @@
-# mc_moveit 
+# mc_moveit
 
 mc_moveit is a simple interface between the [mc_rtc](https://github.com/jrl-umi3218/mc_rtc) and ros' [MoveIt](https://moveit.picknik.ai).
 

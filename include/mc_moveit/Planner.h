@@ -6,8 +6,9 @@
 
 #include <mc_rtc/logging.h>
 #include <mc_rtc/ros.h>
-#include <moveit_msgs/msg/detail/attached_collision_object__struct.hpp>
-#include <moveit_msgs/msg/detail/collision_object__struct.hpp>
+#include <moveit_msgs/msg/attached_collision_object.hpp>
+#include <moveit_msgs/msg/collision_object.hpp>
+#include <moveit_msgs/msg/planning_scene.hpp>
 #include <memory>
 #include <rclcpp/publisher.hpp>
 

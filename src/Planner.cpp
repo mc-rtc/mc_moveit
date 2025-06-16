@@ -8,7 +8,6 @@
 #include <geometric_shapes/shape_operations.h>
 #include <geometric_shapes/shapes.h>
 
-#include <moveit_msgs/msg/detail/planning_scene__struct.hpp>
 #include <octomap_msgs/conversions.h>
 #include <octomap_msgs/msg/octomap_with_pose.h>
 #include <tf2_ros/static_transform_broadcaster.h>

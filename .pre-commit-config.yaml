@@ -10,18 +10,16 @@ repos:
   hooks:
   - id: clang-format
     'types_or': [c++, c]
-    exclude: |
-      (?x)^(
-          doc/_i18n/en/tutorials/advanced/new-robot/robot_module.cpp|
-          doc/_i18n/jp/tutorials/advanced/new-robot/robot_module.cpp|
-          utils/mc_bin_flatbuffers/.*
-      )$
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v5.0.0
   hooks:
   - id: check-added-large-files
   - id: check-merge-conflict
   - id: check-yaml
+    exclude: |
+          (?x)^(
+              etc/.*in.*
+          )$
   - id: destroyed-symlinks
   - id: detect-private-key
   - id: end-of-file-fixer

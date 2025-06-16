@@ -11,45 +11,45 @@
 
 struct MoveItPlan : mc_control::fsm::State
 {
-    void configure(const mc_rtc::Configuration & config) override;
+  void configure(const mc_rtc::Configuration & config) override;
 
-    void start(mc_control::fsm::Controller & ctl) override;
+  void start(mc_control::fsm::Controller & ctl) override;
 
-    bool run(mc_control::fsm::Controller & ctl) override;
+  bool run(mc_control::fsm::Controller & ctl) override;
 
-    void teardown(mc_control::fsm::Controller & ctl) override;
+  void teardown(mc_control::fsm::Controller & ctl) override;
 
-    void make_plan();
-    void make_posture_plan();
-    
-    // TODO move to another state
-    void execute_plan(mc_control::fsm::Controller &controller);
+  void make_plan();
+  void make_posture_plan();
 
-    void add_obstacle(mc_control::fsm::Controller &ctl, const std::string &name, const Eigen::Vector3d & size);
-    void update_obstacle_position(const std::string &name, const sva::PTransformd & pos);
-    void remove_obstacle(mc_control::fsm::Controller &ctl, const std::string &name);
+  // TODO move to another state
+  void execute_plan(mc_control::fsm::Controller & controller);
 
-    void setup_interface(mc_control::fsm::Controller & ctl, const std::string & mode);
+  void add_obstacle(mc_control::fsm::Controller & ctl, const std::string & name, const Eigen::Vector3d & size);
+  void update_obstacle_position(const std::string & name, const sva::PTransformd & pos);
+  void remove_obstacle(mc_control::fsm::Controller & ctl, const std::string & name);
 
-    void reset(mc_control::fsm::Controller &ctl);
+  void setup_interface(mc_control::fsm::Controller & ctl, const std::string & mode);
 
-    private:
-        std::string end_effector_;
-        mc_rbdyn::RobotFrame *frame_;
+  void reset(mc_control::fsm::Controller & ctl);
 
-        bool trajectory_posture_execution;
+private:
+  std::string end_effector_;
+  mc_rbdyn::RobotFrame * frame_;
 
-        std::shared_ptr<mc_moveit::BSplineTrajectoryTask> ef_task = nullptr;
-        std::shared_ptr<mc_moveit::PostureTrajectoryTask> posture_trajectory_task = nullptr;
+  bool trajectory_posture_execution;
 
-        std::shared_ptr<mc_moveit::Planner> planner_;
-        mc_moveit::Planner::Trajectory trajectory_;
+  std::shared_ptr<mc_moveit::BSplineTrajectoryTask> ef_task = nullptr;
+  std::shared_ptr<mc_moveit::PostureTrajectoryTask> posture_trajectory_task = nullptr;
 
-        mc_tasks::PostureTask *posture_task_;
+  std::shared_ptr<mc_moveit::Planner> planner_;
+  mc_moveit::Planner::Trajectory trajectory_;
 
-        std::map<std::string, std::vector<double>> posture_target_;
+  mc_tasks::PostureTask * posture_task_;
 
-        sva::PTransformd target_;
+  std::map<std::string, std::vector<double>> posture_target_;
 
-        std::string status_;
+  sva::PTransformd target_;
+
+  std::string status_;
 };
