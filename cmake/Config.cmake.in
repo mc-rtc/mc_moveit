@@ -3,8 +3,9 @@
 include(CMakeFindDependencyMacro)
 find_dependency(mc_rtc REQUIRED)
 
-include(FindPkgConfig)
-pkg_check_modules(MoveItCpp REQUIRED IMPORTED_TARGET moveit_ros_planning_interface tf2_ros geometric_shapes)
+find_dependency(moveit_ros_planning_interface REQUIRED)
+find_dependency(tf2_ros REQUIRED)
+find_dependency(geometric_shapes REQUIRED)
 
 include("${CMAKE_CURRENT_LIST_DIR}/@PROJECT_NAME@Targets.cmake")
 check_required_components(@PROJECT_NAME@)
