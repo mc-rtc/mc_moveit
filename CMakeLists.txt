@@ -76,3 +76,8 @@ configure_file(etc/MoveItFSM.in.yaml
                "${CMAKE_CURRENT_BINARY_DIR}/etc/MoveItFSM.yaml")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/etc/MoveItFSM.yaml"
         DESTINATION "${MC_CONTROLLER_RUNTIME_INSTALL_PREFIX}/etc")
+
+
+ament_export_targets(mc_moveitTargets HAS_LIBRARY_TARGET)
+ament_export_dependencies(moveit_core moveit_msgs
+                          moveit_ros_planning moveit_ros_planning_interface)
